@@ -102,7 +102,7 @@ $app->post('/api/users', function (Request $request, Response $response): Respon
     $this->dbh->beginTransaction();
 
     try {
-        $duplicated = $this->dbh->select_one('SELECT * FROM users WHERE login_name = ?', $login_name);
+        $duplicated = $this->dbh->select_one('SELECT id FROM users WHERE login_name = ?', $login_name);
         if ($duplicated) {
             $this->dbh->rollback();
 
@@ -207,7 +207,7 @@ $app->post('/api/actions/login', function (Request $request, Response $response)
     $login_name = $request->getParsedBodyParam('login_name');
     $password = $request->getParsedBodyParam('password');
 
-    $user = $this->dbh->select_row('SELECT * FROM users WHERE login_name = ?', $login_name);
+    $user = $this->dbh->select_row('SELECT id, pass_hash FROM users WHERE login_name = ?', $login_name);
     $pass_hash = $this->dbh->select_one('SELECT SHA2(?, 256)', $password);
 
     if (!$user || $pass_hash != $user['pass_hash']) {
@@ -368,7 +368,7 @@ $app->post('/api/events/{id}/actions/reserve', function (Request $request, Respo
     $sheet = null;
     $reservation_id = null;
     while (true) {
-        $sheet = $this->dbh->select_row('SELECT * FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1', $event['id'], $rank);
+        $sheet = $this->dbh->select_row('SELECT id, num FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1', $event['id'], $rank);
         if (!$sheet) {
             return res_error($response, 'sold_out', 409);
         }
@@ -410,7 +410,7 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
         return res_error($response, 'invalid_rank', 404);
     }
 
-    $sheet = $this->dbh->select_row('SELECT * FROM sheets WHERE `rank` = ? AND num = ?', $rank, $num);
+    $sheet = $this->dbh->select_row('SELECT id FROM sheets WHERE `rank` = ? AND num = ?', $rank, $num);
     if (!$sheet) {
         return res_error($response, 'invalid_sheet', 404);
     }
