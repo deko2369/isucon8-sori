@@ -605,9 +605,9 @@ $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Re
                         IFNULL(DATE_FORMAT(r.reserved_at, '%Y-%m-%dT%H:%i:%S.%fZ'), ''),
                         IFNULL(DATE_FORMAT(r.canceled_at, '%Y-%m-%dT%H:%i:%S.%fZ'), '')) AS csv
                  FROM reservations r
-                 WHERE r.event_id = ?
                  INNER JOIN sheets s ON s.id = r.sheet_id
                  INNER JOIN events e ON e.id = r.event_id
+                 WHERE r.event_id = ?
                  ORDER BY reserved_at ASC FOR UPDATE", $event_id));
 
     $body = implode(',', $keys);
