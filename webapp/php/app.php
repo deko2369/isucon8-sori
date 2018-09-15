@@ -266,7 +266,7 @@ function get_events(PDOWrapper $dbh, bool $public = false): array
     $events = [];
     $event_ids = array_map(function (array $event) {
         return $event['id'];
-    }, array_filter($dbh->select_all($query)));
+    }, $dbh->select_all($query));
 
     foreach ($event_ids as $event_id) {
         $event = get_event($dbh, $event_id);
@@ -590,48 +590,61 @@ $app->post('/admin/api/events/{id}/actions/edit', function (Request $request, Re
 
 $app->get('/admin/api/reports/events/{id}/sales', function (Request $request, Response $response, array $args): Response {
     $event_id = $args['id'];
-    $event = get_event($this->dbh, $event_id);
 
-    $reports = [];
+    $keys = ['reservation_id', 'event_id', 'rank', 'num', 'price', 'user_id', 'sold_at', 'canceled_at'];
+    $reports = array_map(function ($row) {
+            return $row['csv'];
+        }, $this->dbh->select_all(
+                "SELECT CONCAT_WS(',',
+                        r.id,
+                        r.event_id,
+                        s.rank,
+                        s.num,
+                        IFNULL((s.price + e.price), 0),
+                        r.user_id,
+                        IFNULL(DATE_FORMAT(r.reserved_at, '%Y-%m-%dT%H:%i:%S.%fZ'), ''),
+                        IFNULL(DATE_FORMAT(r.canceled_at, '%Y-%m-%dT%H:%i:%S.%fZ'), '')) AS csv
+                 FROM reservations r
+                 WHERE r.event_id = ?
+                 INNER JOIN sheets s ON s.id = r.sheet_id
+                 INNER JOIN events e ON e.id = r.event_id
+                 ORDER BY reserved_at ASC FOR UPDATE", $event_id));
 
-    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id WHERE r.event_id = ? ORDER BY reserved_at ASC FOR UPDATE', $event['id']);
-    foreach ($reservations as $reservation) {
-        $report = [
-            'reservation_id' => $reservation['id'],
-            'event_id' => $reservation['event_id'],
-            'rank' => $reservation['sheet_rank'],
-            'num' => $reservation['sheet_num'],
-            'user_id' => $reservation['user_id'],
-            'sold_at' => (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u').'Z',
-            'canceled_at' => $reservation['canceled_at'] ? (new \DateTime("{$reservation['canceled_at']}", new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u').'Z' : '',
-            'price' => $reservation['event_price'] + $reservation['sheet_price'],
-        ];
+    $body = implode(',', $keys);
+    $body .= "\n";
+    $body .= implode("\n", $reports);
 
-        array_push($reports, $report);
-    }
-
-    return render_report_csv($response, $reports);
+    return $response->withHeader('Content-Type', 'text/csv; charset=UTF-8')
+        ->withHeader('Content-Disposition', 'attachment; filename="report.csv"')
+        ->write($body);
 });
 
 $app->get('/admin/api/reports/sales', function (Request $request, Response $response): Response {
-    $reports = [];
-    $reservations = $this->dbh->select_all('SELECT r.*, s.rank AS sheet_rank, s.num AS sheet_num, s.price AS sheet_price, e.id AS event_id, e.price AS event_price FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id ORDER BY reserved_at ASC FOR UPDATE');
-    foreach ($reservations as $reservation) {
-        $report = [
-            'reservation_id' => $reservation['id'],
-            'event_id' => $reservation['event_id'],
-            'rank' => $reservation['sheet_rank'],
-            'num' => $reservation['sheet_num'],
-            'user_id' => $reservation['user_id'],
-            'sold_at' => (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u').'Z',
-            'canceled_at' => $reservation['canceled_at'] ? (new \DateTime("{$reservation['canceled_at']}", new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u').'Z' : '',
-            'price' => $reservation['event_price'] + $reservation['sheet_price'],
-        ];
+    $keys = ['reservation_id', 'event_id', 'rank', 'num', 'price', 'user_id', 'sold_at', 'canceled_at'];
+    $reports = array_map(function ($row) {
+            return $row['csv'];
+        }, $this->dbh->select_all(
+                "SELECT CONCAT_WS(',',
+                        r.id,
+                        r.event_id,
+                        s.rank,
+                        s.num,
+                        IFNULL((s.price + e.price), 0),
+                        r.user_id,
+                        IFNULL(DATE_FORMAT(r.reserved_at, '%Y-%m-%dT%H:%i:%S.%fZ'), ''),
+                        IFNULL(DATE_FORMAT(r.canceled_at, '%Y-%m-%dT%H:%i:%S.%fZ'), '')) AS csv
+                 FROM reservations r
+                 INNER JOIN sheets s ON s.id = r.sheet_id
+                 INNER JOIN events e ON e.id = r.event_id
+                 ORDER BY reserved_at ASC FOR UPDATE"));
 
-        array_push($reports, $report);
-    }
+    $body = implode(',', $keys);
+    $body .= "\n";
+    $body .= implode("\n", $reports);
 
-    return render_report_csv($response, $reports);
+    return $response->withHeader('Content-Type', 'text/csv; charset=UTF-8')
+        ->withHeader('Content-Disposition', 'attachment; filename="report.csv"')
+        ->write($body);
 })->add($admin_login_required);
 
 function render_report_csv(Response $response, array $reports): Response
