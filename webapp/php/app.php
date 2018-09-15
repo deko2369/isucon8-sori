@@ -320,7 +320,7 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
             ++$event['total'];
             ++$event['sheets'][$rank]['total'];
 
-            $reservation = $dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet_id++);
+            $reservation = $dbh->select_row('SELECT user_id, reserved_at FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet_id++);
             if ($reservation) {
                 $sheet['mine'] = $login_user_id && $reservation['user_id'] == $login_user_id;
                 $sheet['reserved'] = true;
