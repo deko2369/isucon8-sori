@@ -301,35 +301,41 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
         $event['sheets'][$rank]['total'] = 0;
         $event['sheets'][$rank]['remains'] = 0;
     }
+    $tsheets = [
+        'S' => [ 'num' => 50, 'price' => 5000, 'start_id' => 1 ],
+        'A' => [ 'num' => 150, 'price' => 3000, 'start_id' => 51 ],
+        'B' => [ 'num' => 300, 'price' => 1000, 'start_id' => 201 ],
+        'C' => [ 'num' => 500, 'price' => 0, 'start_id' => 501 ]
+    ];
 
-    $sheets = $dbh->select_all('SELECT * FROM sheets ORDER BY `rank`, num');
-    foreach ($sheets as $sheet) {
-        $event['sheets'][$sheet['rank']]['price'] = $event['sheets'][$sheet['rank']]['price'] ?? $event['price'] + $sheet['price'];
+    foreach ($tsheets as $rank => $sinfo) {
+        $sheet_id = $sinfo['start_id'];
+        $sheet_num = $sinfo['num'];
+        $sheet_price = $sinfo['price'];
+        for ($i = 1; $i <= $sinfo['num']; ++$i) {
+            $sheet['num'] = $i;
 
-        ++$event['total'];
-        ++$event['sheets'][$sheet['rank']]['total'];
+            $event['sheets'][$rank]['price'] = $event['sheets'][$rank]['price'] ?? $event['price'] + $sheet_price;
 
-        $reservation = $dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet['id']);
-        if ($reservation) {
-            $sheet['mine'] = $login_user_id && $reservation['user_id'] == $login_user_id;
-            $sheet['reserved'] = true;
-            $sheet['reserved_at'] = (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
-        } else {
-            ++$event['remains'];
-            ++$event['sheets'][$sheet['rank']]['remains'];
+            ++$event['total'];
+            ++$event['sheets'][$rank]['total'];
+
+            $reservation = $dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet_id++);
+            if ($reservation) {
+                $sheet['mine'] = $login_user_id && $reservation['user_id'] == $login_user_id;
+                $sheet['reserved'] = true;
+                $sheet['reserved_at'] = (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
+            } else {
+                ++$event['remains'];
+                ++$event['sheets'][$rank]['remains'];
+            }
+
+            if (false === isset($event['sheets'][$rank]['detail'])) {
+                $event['sheets'][$rank]['detail'] = [];
+            }
+
+            array_push($event['sheets'][$rank]['detail'], $sheet);
         }
-
-        $sheet['num'] = $sheet['num'];
-        $rank = $sheet['rank'];
-        unset($sheet['id']);
-        unset($sheet['price']);
-        unset($sheet['rank']);
-
-        if (false === isset($event['sheets'][$rank]['detail'])) {
-            $event['sheets'][$rank]['detail'] = [];
-        }
-
-        array_push($event['sheets'][$rank]['detail'], $sheet);
     }
 
     $event['public'] = $event['public_fg'] ? true : false;
