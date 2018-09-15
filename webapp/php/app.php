@@ -79,7 +79,7 @@ $container['dbh'] = function (): PDOWrapper {
 $app->get('/', function (Request $request, Response $response): Response {
     $events = array_map(function (array $event) {
         return sanitize_event($event);
-    }, get_events($this->dbh));
+    }, get_events($this->dbh, true));
 
     return $this->view->render($response, 'index.twig', [
         'events' => $events,
@@ -234,7 +234,7 @@ $app->post('/api/actions/logout', function (Request $request, Response $response
 $app->get('/api/events', function (Request $request, Response $response): Response {
     $events = array_map(function (array $event) {
         return sanitize_event($event);
-    }, get_events($this->dbh));
+    }, get_events($this->dbh, true));
 
     return $response->withJson($events, null, JSON_NUMERIC_CHECK);
 });
@@ -254,20 +254,19 @@ $app->get('/api/events/{id}', function (Request $request, Response $response, ar
     return $response->withJson($event, null, JSON_NUMERIC_CHECK);
 });
 
-function get_events(PDOWrapper $dbh, ?callable $where = null): array
+function get_events(PDOWrapper $dbh, bool $public = false): array
 {
-    if (null === $where) {
-        $where = function (array $event) {
-            return $event['public_fg'];
-        };
+    $query = 'SELECT id FROM events';
+    if ($public) {
+        $query .= ' WHERE public_fg = 1';
     }
-
+    $query .= ' ORDER BY id ASC';
     $dbh->beginTransaction();
 
     $events = [];
     $event_ids = array_map(function (array $event) {
         return $event['id'];
-    }, array_filter($dbh->select_all('SELECT * FROM events ORDER BY id ASC'), $where));
+    }, array_filter($dbh->select_all($query)));
 
     foreach ($event_ids as $event_id) {
         $event = get_event($dbh, $event_id);
@@ -466,7 +465,7 @@ $fillin_administrator = function (Request $request, Response $response, callable
 };
 
 $app->get('/admin/', function (Request $request, Response $response) {
-    $events = get_events($this->dbh, function ($event) { return $event; });
+    $events = get_events($this->dbh, false);
 
     return $this->view->render($response, 'admin.twig', [
         'events' => $events,
@@ -519,7 +518,7 @@ function get_login_administrator(ContainerInterface $app)
 }
 
 $app->get('/admin/api/events', function (Request $request, Response $response): Response {
-    $events = get_events($this->dbh, function ($event) { return $event; });
+    $events = get_events($this->dbh, false);
 
     return $response->withJson($events, null, JSON_NUMERIC_CHECK);
 })->add($admin_login_required);
