@@ -294,7 +294,7 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
     $event['id'] = (int) $event['id'];
 
     // zero fill
-    $event['total'] = 0;
+    $event['total'] = 1000;
     $event['remains'] = 0;
 
     foreach (['S', 'A', 'B', 'C'] as $rank) {
@@ -312,19 +312,25 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
         $sheet_id = $sinfo['start_id'];
         $sheet_num = $sinfo['num'];
         $sheet_price = $sinfo['price'];
-        for ($i = 1; $i <= $sinfo['num']; ++$i) {
-            $sheet['num'] = $i;
+
+        $reservations_select = $dbh->select_all('SELECT * FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sinfo['start_id'], $sinfo['start_id'] + $sinfo['num']);
+        $reservations = array();
+        foreach($reservations_select as $r) {
+             $reservations[(int)($r['sheet_id'])] = $r;
+        }
+
+        $event['sheets'][$rank]['total'] = $sinfo['num'];
+
+        $j = 1;
+        for ($i = $sinfo['start_id']; $i < $sinfo['start_id'] + $sinfo['num']; ++$i) {
+            $sheet['num'] = $j++;
 
             $event['sheets'][$rank]['price'] = $event['sheets'][$rank]['price'] ?? $event['price'] + $sheet_price;
 
-            ++$event['total'];
-            ++$event['sheets'][$rank]['total'];
-
-            $reservation = $dbh->select_row('SELECT user_id, reserved_at FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sheet_id++);
-            if ($reservation) {
-                $sheet['mine'] = $login_user_id && $reservation['user_id'] == $login_user_id;
+            if (array_key_exists($i, $reservations)) {
+                $sheet['mine'] = $login_user_id && $reservations[$i]['user_id'] == $login_user_id;
                 $sheet['reserved'] = true;
-                $sheet['reserved_at'] = (new \DateTime("{$reservation['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
+                $sheet['reserved_at'] = (new \DateTime("{$reservations[$i]['reserved_at']}", new DateTimeZone('UTC')))->getTimestamp();
             } else {
                 ++$event['remains'];
                 ++$event['sheets'][$rank]['remains'];
