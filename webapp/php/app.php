@@ -181,7 +181,7 @@ $app->get('/api/users/{id}', function (Request $request, Response $response, arr
     };
 
     $user['recent_reservations'] = $recent_reservations($this);
-    $user['total_price'] = $this->dbh->select_one('SELECT IFNULL(SUM(e.price + s.price), 0) FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id WHERE r.user_id = ? AND r.canceled_at IS NULL', $user['id']);
+    $user['total_price'] = $this->dbh->select_one('SELECT IFNULL(SUM(e.price + s.price), 0) FROM reservations r INNER JOIN sheets s ON s.id = r.sheet_id INNER JOIN events e ON e.id = r.event_id WHERE r.user_id = ? AND r.canceled = 0', $user['id']);
 
     $recent_events = function (ContainerInterface $app) use ($user) {
         $recent_events = [];
@@ -313,7 +313,7 @@ function get_event(PDOWrapper $dbh, int $event_id, ?int $login_user_id = null): 
         $sheet_num = $sinfo['num'];
         $sheet_price = $sinfo['price'];
 
-        $reservations_select = $dbh->select_all('SELECT * FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sinfo['start_id'], $sinfo['start_id'] + $sinfo['num']);
+        $reservations_select = $dbh->select_all('SELECT * FROM reservations WHERE event_id = ? AND sheet_id >= ? AND sheet_id < ? AND canceled = 0 GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)', $event['id'], $sinfo['start_id'], $sinfo['start_id'] + $sinfo['num']);
         $reservations = array();
         foreach($reservations_select as $r) {
              $reservations[(int)($r['sheet_id'])] = $r;
@@ -380,7 +380,7 @@ $app->post('/api/events/{id}/actions/reserve', function (Request $request, Respo
     $sheet = null;
     $reservation_id = null;
     while (true) {
-        $sheet = $this->dbh->select_row('SELECT id, num FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled_at IS NULL FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1', $event['id'], $rank);
+        $sheet = $this->dbh->select_row('SELECT id, num FROM sheets WHERE id NOT IN (SELECT sheet_id FROM reservations WHERE event_id = ? AND canceled = 0 FOR UPDATE) AND `rank` = ? ORDER BY RAND() LIMIT 1', $event['id'], $rank);
         if (!$sheet) {
             return res_error($response, 'sold_out', 409);
         }
@@ -429,7 +429,7 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
 
     $this->dbh->beginTransaction();
     try {
-        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled_at IS NULL GROUP BY event_id HAVING reserved_at = MIN(reserved_at) FOR UPDATE', $event['id'], $sheet['id']);
+        $reservation = $this->dbh->select_row('SELECT * FROM reservations WHERE event_id = ? AND sheet_id = ? AND canceled = 0 GROUP BY event_id HAVING reserved_at = MIN(reserved_at) FOR UPDATE', $event['id'], $sheet['id']);
         if (!$reservation) {
             $this->dbh->rollback();
 
@@ -442,7 +442,7 @@ $app->delete('/api/events/{id}/sheets/{ranks}/{num}/reservation', function (Requ
             return res_error($response, 'not_permitted', 403);
         }
 
-        $this->dbh->execute('UPDATE reservations SET canceled_at = ? WHERE id = ?', (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u'), $reservation['id']);
+        $this->dbh->execute('UPDATE reservations SET canceled_at = ?, canceled = 1 WHERE id = ?', (new DateTime('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u'), $reservation['id']);
         $this->dbh->commit();
     } catch (\Exception $e) {
         $this->dbh->rollback();
